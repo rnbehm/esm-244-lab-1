@@ -1,0 +1,153 @@
+---
+title: "ESM 244 Lab 1"
+author: "Rachel Behm"
+date: "January 10, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Objectives:
+-basic data wrangling review
+-intro to spatial data in r with sf
+-intro to shiny apps
+
+
+**ctr+alt+i = shortcut to insert r script**
+
+1. Packages
+```{r, include = FALSE}
+library(tidyverse)
+library(sf)
+library(leaflet)
+library(tmap)
+```
+
+2. Review of reading, exploring, wrangling, and visualizing data
+a. read in data
+```{r, include= FALSE}
+wine<-read_csv("wine_data.csv")
+
+#if want to look at do View(wine) in the console
+```
+
+b.wrangling
+want to find wine that is most bang for your buck
+
+**r+shift+m= shortcut for pipe operator**
+```{r}
+wine_new<- wine %>% 
+  select(country, province, winery, region_1, points,price) %>% 
+  rename(state = province) %>% 
+  filter(state =="California" | state == "Oregon" |state == "Washington") %>% 
+  mutate(ppd = points/price) %>% 
+  arrange(-ppd)
+
+#select chooses desired columns and/or reorders columns
+# one equal =ets a value equal to something == looks for a match
+#ppd= points per dollar. want higher ppd
+#arrange- sort by decreasing ppd (1st is the highest)
+```
+
+
+c. use group_by and summarize to find summary statistics by group
+want to look at state comparison easily
+```{r}
+wine_summary <- wine_new %>% 
+  group_by(state) %>%
+  summarize(
+    mean_ppd = mean(ppd, na.rm = TRUE),
+    max_ppd = max(ppd, na.rm=TRUE)
+  )
+
+#washington has higher avg ppd than other two
+#max is actually in CA
+#if use another var in group_by will seperate out those characters seperately
+```
+
+d.gg graphics
+```{r}
+wine_hists <- ggplot(wine_new, aes(x= ppd)) +
+  geom_histogram(aes(fill=state)) +
+  facet_wrap(~state, scale = "free")
+
+wine_hists
+#facet_wrap = facet_grid
+#having the wrap default set to not free is good. ppl could be misled make sure to be clear if change
+```
+**POINTS= COLOR. BAR= FILL** 
+
+scatterplot of price vs points with color by state and linear model trendline on top
+```{r}
+wine_points <- ggplot(wine_new, aes(x= price, y = points))+
+  geom_point(aes(color=state), alpha =0.5) +
+  geom_smooth(color="black", method = "lm", se = FALSE) +
+  scale_color_manual(values = c("royalblue","mediumorchid1", "orange")) +
+  facet_wrap(~state)+
+  theme_light()
+
+wine_points
+#scale_color_ can manually change color how u want
+# if data is hard to see, separate the views
+#adding trendline is literally so easy via geom_smooth woot woot
+#geom_smooth() = make a line that is
+#color= "black" = the color black
+#,method = "lm" = and is of the linear model trendlilne
+#,se = FALSE = but dont show the standard error
+ 
+```
+ 
+ 2. california county spatial data via sf
+```{r}
+ca_counties <- st_read(dsn = ".", layer = "CA_Counties_TIGER2016" )
+
+#since not csv file have to use st_read
+#dsn = destination working directory = "." we already there lol
+
+#plot(ca_counties)
+
+
+#shows everything but we only care about income
+#sf uses sticky geometry so you dont have to worry about dealing with that thank you based god
+
+ca_land <- ca_counties %>%
+  select(NAME, ALAND)
+
+ca_pop_inc <- read_csv("ca_pop_inc.csv") %>%
+  rename(NAME = COUNTY)
+#now we want to combine with the spatial data- what name do the two have in common? they have names but the title doesnt match, we have to fix that. everything has to match even the values
+
+ca_df <- full_join(ca_land, ca_pop_inc) %>% 
+  select(NAME, MedFamilyIncome)
+
+#full_join is the safest way because doesnt get rid of anything
+#R will match the column with the same name and add all of the new columns to make new df
+#now we wanna make a map of the data
+#spatial info is still there even after select woooo
+
+```
+ 
+d. use geom_sf to make maps in ggplot
+```{r}
+ca_income <- ggplot(ca_df) +
+  geom_sf(aes(fill = MedFamilyIncome))
+
+ca_income
+#dont need x and y axis since using spatial data
+
+#leaflet(ca_df) %>% 
+  #addPolygons()
+#doesnt work cause datum doesnt match
+
+
+
+ca_df_transform <- st_transform(ca_df, crs = 4326)
+leaflet(ca_df_transform) %>% 
+  addTiles() %>%
+  addPolygons()
+
+#makes interactive map of polygons
+```
+
